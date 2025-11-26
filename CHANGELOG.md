@@ -63,6 +63,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Consistent design system
 - Git submodule support for versioning
 
+## [1.0.1] - 2025-11-26
+
+### Removed
+
+- Legacy framework files removed (replaced by PSR-4 autoloaded classes in `src/`):
+  - `class-api.php` → Use `\Optti\Framework\ApiClient`
+  - `class-cache.php` → Use `\Optti\Framework\Cache`
+  - `class-cache-manager.php` → Use `\Optti\Framework\CacheManager`
+  - `class-db.php` → Use `\Optti\Framework\Db`
+  - `class-db-optimizer.php` → Use `\Optti\Framework\DbOptimizer`
+  - `class-license.php` → Use `\Optti\Framework\LicenseManager`
+  - `class-logger.php` → Use `\Optti\Framework\Logger`
+  - `class-plugin.php` → Use `\Optti\Framework\PluginBase`
+  - `interfaces/` directory → Use `src/Interfaces/`
+  - `traits/` directory → Use `src/Traits/`
+
+### Changed
+
+- Framework now exclusively uses PSR-4 autoloading via `loader.php`
+- All classes must be accessed via `\Optti\Framework\*` namespace
+
 ## [Unreleased]
 
 ### Planned
