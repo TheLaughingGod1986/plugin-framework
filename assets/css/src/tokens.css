@@ -1,7 +1,7 @@
 /**
  * Optti Framework Design Tokens
  * Unified design system for all Optti plugins
- * 
+ *
  * Based on BeepBeep AI design system with optti-* aliases for compatibility
  * Version: 2.0.0
  * Last Updated: 2025-11-26
@@ -48,7 +48,7 @@
     --optti-color-error: var(--bbai-danger);
     --optti-color-warning: var(--bbai-warning);
     --optti-color-info: var(--bbai-info);
-    --optti-color-secondary: #23282d;
+	--optti-color-secondary: #23282d;
 
     /* ========================================
        NEUTRAL COLORS
@@ -314,10 +314,10 @@
     --bbai-badge-font-size: var(--bbai-text-xs);
     --bbai-badge-font-weight: var(--bbai-font-bold);
 
-    /* Breakpoints */
-    --optti-breakpoint-mobile: 480px;
-    --optti-breakpoint-tablet: 768px;
-    --optti-breakpoint-desktop: 1024px;
+	/* Breakpoints */
+	--optti-breakpoint-mobile: 480px;
+	--optti-breakpoint-tablet: 768px;
+	--optti-breakpoint-desktop: 1024px;
 }
 
 /* ========================================

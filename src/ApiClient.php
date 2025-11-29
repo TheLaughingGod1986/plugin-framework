@@ -975,5 +975,41 @@ class ApiClient {
 			],
 		];
 	}
+
+	/**
+	 * Get user subscriptions.
+	 *
+	 * @param string $email User email.
+	 * @return array|\WP_Error Subscriptions data or error.
+	 */
+	public function get_subscriptions( $email ) {
+		return $this->post( '/billing/subscriptions', [ 'email' => $email ] );
+	}
+
+	/**
+	 * Get checkout URL.
+	 *
+	 * @param string $email User email.
+	 * @param string $price_id Stripe price ID.
+	 * @return array|\WP_Error Checkout session data or error.
+	 */
+	public function get_checkout_url( $email, $price_id ) {
+		$plugin_slug = defined( 'OPTTI_PLUGIN_SLUG' ) ? OPTTI_PLUGIN_SLUG : 'beepbeep-ai';
+		return $this->post( '/billing/create-checkout', [
+			'email'    => $email,
+			'plugin'   => $plugin_slug,
+			'priceId'  => $price_id,
+		] );
+	}
+
+	/**
+	 * Get portal URL.
+	 *
+	 * @param string $email User email.
+	 * @return array|\WP_Error Portal session data or error.
+	 */
+	public function get_portal_url( $email ) {
+		return $this->post( '/billing/create-portal', [ 'email' => $email ] );
+	}
 }
 

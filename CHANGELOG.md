@@ -5,6 +5,33 @@ All notable changes to the Optti WordPress Plugin Framework will be documented i
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2025-01-XX
+
+### Removed
+
+- Legacy class files from framework root directory:
+  - `class-plugin.php` (replaced by `src/PluginBase.php`)
+  - `class-api.php` (replaced by `src/ApiClient.php`)
+  - `class-logger.php` (replaced by `src/Logger.php`)
+  - `class-license.php` (replaced by `src/LicenseManager.php`)
+  - `class-db.php` (replaced by `src/Db.php`)
+  - `class-db-optimizer.php` (replaced by `src/DbOptimizer.php`)
+  - `class-cache.php` (replaced by `src/Cache.php`)
+  - `class-cache-manager.php` (replaced by `src/CacheManager.php`)
+- Legacy `interfaces/` directory (replaced by `src/Interfaces/`)
+- Legacy `traits/` directory (replaced by `src/Traits/`)
+
+### Changed
+
+- Framework now exclusively uses PSR-4 autoloading from `src/` directory
+- All classes, interfaces, and traits are now in the `src/` directory structure
+
+## [1.0.1] - 2024-01-XX
+
+### Removed
+
+- Legacy framework files that were replaced by PSR-4 autoloaded classes
+
 ## [1.0.0] - 2024-01-XX
 
 ### Added

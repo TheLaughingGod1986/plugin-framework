@@ -144,6 +144,9 @@ abstract class PluginBase {
 	 * @return void
 	 */
 	protected function init_admin() {
+		// Add body class for CSS scoping on Optti pages only.
+		add_filter( 'admin_body_class', [ $this, 'add_admin_body_class' ] );
+
 		// Enqueue admin assets.
 		add_action( 'admin_enqueue_scripts', [ $this, 'enqueue_admin_assets' ] );
 
@@ -158,26 +161,107 @@ abstract class PluginBase {
 	}
 
 	/**
+	 * Add admin body class for CSS scoping.
+	 *
+	 * @param string $classes Existing body classes.
+	 * @return string Modified body classes.
+	 */
+	public function add_admin_body_class( $classes ) {
+		$screen = get_current_screen();
+		if ( ! $screen ) {
+			return $classes;
+		}
+		
+		// Check if this is an Optti admin page
+		$screen_id = $screen->id ?? '';
+		$plugin_slug = $this->get_plugin_slug();
+		
+		// Exclude WordPress core pages
+		$excluded_pages = [ 'dashboard', 'post', 'page', 'attachment', 'edit-post', 'edit-page', 'upload', 'edit-comments', 'themes', 'plugins', 'users', 'tools', 'settings', 'options-general' ];
+		$is_excluded = false;
+		foreach ( $excluded_pages as $excluded ) {
+			if ( $screen_id === $excluded || strpos( $screen_id, $excluded . '-' ) === 0 ) {
+				// Only exclude if it's not an Optti sub-page
+				if ( strpos( $screen_id, 'optti' ) === false && strpos( $screen_id, 'bbai' ) === false && strpos( $screen_id, $plugin_slug ) === false ) {
+					$is_excluded = true;
+					break;
+				}
+			}
+		}
+		
+		if ( $is_excluded ) {
+			return $classes;
+		}
+		
+		$is_optti_page = (
+			strpos( $screen_id, 'optti' ) !== false ||
+			strpos( $screen_id, $plugin_slug ) !== false ||
+			strpos( $screen_id, 'bbai' ) !== false ||
+			( isset( $_GET['page'] ) && ( strpos( $_GET['page'], 'optti' ) !== false || strpos( $_GET['page'], 'bbai' ) !== false ) )
+		);
+		
+		if ( $is_optti_page ) {
+			$classes .= ' optti-admin-page';
+		}
+		
+		return $classes;
+	}
+
+	/**
 	 * Enqueue admin assets.
 	 *
 	 * @return void
 	 */
 	public function enqueue_admin_assets() {
 		$screen = get_current_screen();
-		if ( ! $screen || strpos( $screen->id, $this->get_plugin_slug() ) === false ) {
+		if ( ! $screen ) {
 			return;
 		}
 
-		// Enqueue framework assets.
+		// Check if this is an Optti admin page
+		$screen_id = $screen->id ?? '';
+		$plugin_slug = $this->get_plugin_slug();
+		
+		// Exclude WordPress core pages
+		$excluded_pages = [ 'dashboard', 'post', 'page', 'attachment', 'edit-post', 'edit-page', 'upload', 'edit-comments', 'themes', 'plugins', 'users', 'tools', 'settings', 'options-general' ];
+		foreach ( $excluded_pages as $excluded ) {
+			if ( $screen_id === $excluded || strpos( $screen_id, $excluded . '-' ) === 0 ) {
+				// Only exclude if it's not an Optti sub-page
+				if ( strpos( $screen_id, 'optti' ) === false && strpos( $screen_id, 'bbai' ) === false && strpos( $screen_id, $plugin_slug ) === false ) {
+					return;
+				}
+			}
+		}
+		
+		$is_optti_page = (
+			strpos( $screen_id, 'optti' ) !== false ||
+			strpos( $screen_id, $plugin_slug ) !== false ||
+			strpos( $screen_id, 'bbai' ) !== false ||
+			( isset( $_GET['page'] ) && ( strpos( $_GET['page'], 'optti' ) !== false || strpos( $_GET['page'], 'bbai' ) !== false ) )
+		);
+		
+		if ( ! $is_optti_page ) {
+			return;
+		}
+
+		// Enqueue framework assets only if files exist.
 		$asset_url = $this->config['asset_url'] ?? '';
-		if ( ! empty( $asset_url ) ) {
+		$asset_dir = $this->config['asset_dir'] ?? '';
+		if ( ! empty( $asset_url ) && ! empty( $asset_dir ) ) {
+			$css_file = trailingslashit( $asset_dir ) . 'admin.css';
+			// Only enqueue if file exists
+			if ( file_exists( $css_file ) ) {
 			wp_enqueue_style(
 				'optti-framework-admin',
 				trailingslashit( $asset_url ) . 'admin.css',
 				[],
 				$this->get_version()
 			);
+			}
 
+			$js_file = trailingslashit( $asset_dir ) . 'admin.js';
+			// Only enqueue if file exists
+			if ( file_exists( $js_file ) ) {
 			wp_enqueue_script(
 				'optti-framework-admin',
 				trailingslashit( $asset_url ) . 'admin.js',
@@ -188,19 +272,20 @@ abstract class PluginBase {
 
 			// Localize script.
 			wp_localize_script( 'optti-framework-admin', 'OPTTI_PLUGIN', [
-				'apiBase'     => $this->config['api_base_url'] ?? 'https://alttext-ai-backend.onrender.com',
+					'apiBase'     => $this->config['api_base_url'] ?? 'https://alttext-ai-backend.onrender.com',
 				'pluginSlug'  => $this->get_plugin_slug(),
 				'nonce'       => wp_create_nonce( 'wp_rest' ),
 				'userInfo'    => $this->get_user_info(),
 				'hasLicense'  => LicenseManager::instance()->has_active_license(),
 			] );
-			
-			// Add Optti API configuration
-			wp_localize_script( 'optti-framework-admin', 'opttiApi', [
-				'baseUrl' => $this->config['api_base_url'] ?? 'https://alttext-ai-backend.onrender.com',
-				'plugin' => $this->get_plugin_slug(),
-				'site'   => home_url()
-			] );
+				
+				// Add Optti API configuration
+				wp_localize_script( 'optti-framework-admin', 'opttiApi', [
+					'baseUrl' => $this->config['api_base_url'] ?? 'https://alttext-ai-backend.onrender.com',
+					'plugin' => $this->get_plugin_slug(),
+					'site'   => home_url()
+				] );
+			}
 		}
 	}
 
