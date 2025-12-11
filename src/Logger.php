@@ -63,6 +63,12 @@ class Logger {
 	 * @return void
 	 */
 	public static function create_table() {
+		// Check if table already exists before running expensive dbDelta.
+		if ( self::$table_verified || self::table_exists() ) {
+			self::$table_verified = true;
+			return;
+		}
+
 		global $wpdb;
 		$table = self::table();
 		$charset_collate = $wpdb->get_charset_collate();

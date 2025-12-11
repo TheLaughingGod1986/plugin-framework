@@ -558,6 +558,10 @@ class ApiClient {
 			$this->set_token( $response['token'] );
 			if ( isset( $response['user'] ) ) {
 				$this->set_user_data( $response['user'] );
+				// Save license key from user data for easy access
+				if ( isset( $response['user']['license_key'] ) ) {
+					$this->set_license_key( $response['user']['license_key'] );
+				}
 			}
 		}
 
@@ -581,6 +585,10 @@ class ApiClient {
 			$this->set_token( $response['token'] );
 			if ( isset( $response['user'] ) ) {
 				$this->set_user_data( $response['user'] );
+				// Save license key from user data for easy access
+				if ( isset( $response['user']['license_key'] ) ) {
+					$this->set_license_key( $response['user']['license_key'] );
+				}
 			}
 		}
 
@@ -934,6 +942,8 @@ class ApiClient {
 			return $image_payload;
 		}
 
+		$site_hash = $this->get_site_id();
+
 		// Build request body.
 		$body = [
 			'image_data'    => $image_payload,
@@ -944,10 +954,50 @@ class ApiClient {
 			'attachment_id' => (string) $image_id,
 		];
 
+		if ( ! empty( $site_hash ) ) {
+			$body['siteHash'] = $site_hash;
+			$body['site_id']  = $site_hash;
+		}
+
 		$extra_headers = [
 			'X-Image-ID'      => (string) $image_id,
 			'X-Attachment-ID' => (string) $image_id,
 		];
+
+		if ( ! empty( $site_hash ) ) {
+			$extra_headers['X-Site-Hash'] = $site_hash;
+		}
+
+		// Debug: Log what we are about to send (no raw base64)
+		if ( class_exists( '\BeepBeepAI\AltTextGenerator\Debug_Log' ) ) {
+			\BeepBeepAI\AltTextGenerator\Debug_Log::log(
+				'info',
+				'Framework API Request Payload (ready to send)',
+				array(
+					'image_id'             => $image_id,
+					'has_image_url'        => ! empty( $image_payload['image_url'] ),
+					'image_url_preview'    => ! empty( $image_payload['image_url'] ) ? substr( $image_payload['image_url'], 0, 120 ) . '...' : 'none',
+					'has_image_base64'     => ! empty( $image_payload['image_base64'] ),
+					'base64_length'        => ! empty( $image_payload['image_base64'] ) ? strlen( $image_payload['image_base64'] ) : 0,
+					'dimensions'           => ( $image_payload['width'] ?? 'missing' ) . 'x' . ( $image_payload['height'] ?? 'missing' ),
+					'image_source'         => $image_payload['image_source'] ?? 'missing',
+					'image_mime_type'      => $image_payload['mime_type'] ?? 'missing',
+					'body_has_site_hash'   => ! empty( $body['siteHash'] ),
+					'header_has_site_hash' => ! empty( $extra_headers['X-Site-Hash'] ),
+					'body_keys'            => array_keys( $body ),
+					'header_keys'          => array_keys( $extra_headers ),
+					'license_key_in_header'=> ! empty( $extra_headers['X-License-Key'] ),
+					'license_key_in_body'  => ! empty( $body['licenseKey'] ),
+					'has_base64'           => ! empty( $image_payload['image_base64'] ),
+					'base64_size_kb'       => ! empty( $image_payload['image_base64'] ) ? round( strlen( $image_payload['image_base64'] ) / 1024, 2 ) : 0,
+					'has_public_url'       => ! empty( $image_payload['image_url'] ) && $this->is_public_https_url( $image_payload['image_url'] ?? '' ),
+					'bytes_per_pixel'      => ( ! empty( $image_payload['image_base64'] ) && ! empty( $image_payload['width'] ) && ! empty( $image_payload['height'] ) )
+						? ( ( strlen( $image_payload['image_base64'] ) * 3 / 4 ) / max( 1, $image_payload['width'] * $image_payload['height'] ) )
+						: 'n/a',
+				),
+				'api'
+			);
+		}
 
 		// Make request.
 		return $this->request( '/api/generate', 'POST', $body, [
@@ -966,16 +1016,221 @@ class ApiClient {
 	 * @return array|\WP_Error Image payload or error.
 	 */
 	protected function prepare_image_payload( $image_id, $image_url, $context = [] ) {
-		// For now, use URL-based approach (simpler and more reliable).
-		// Inline base64 can be added later if needed.
+		$parsed_image_url = $image_url ? wp_parse_url( $image_url ) : null;
+		$filename         = $parsed_image_url && isset( $parsed_image_url['path'] ) ? wp_basename( $parsed_image_url['path'] ) : '';
+		$metadata         = wp_get_attachment_metadata( $image_id );
+		$file_path        = get_attached_file( $image_id );
+
+		$is_public = $this->is_public_https_url( $image_url );
+		if ( $is_public && ! empty( $image_url ) ) {
+			$payload = [
+				'image_id'      => (string) $image_id,
+				'attachment_id' => (string) $image_id,
+				'image_source'  => 'url',
+				'image_url'     => $image_url,
+				'url'           => $image_url,
+				'filename'      => $filename,
+			];
+			if ( $metadata && isset( $metadata['width'], $metadata['height'] ) ) {
+				$payload['width']  = (int) $metadata['width'];
+				$payload['height'] = (int) $metadata['height'];
+			}
+			return $payload;
+		}
+
+		if ( ! $file_path || ! file_exists( $file_path ) ) {
+			return new \WP_Error( 'missing_image_data', __( 'Image file not found for encoding.', 'beepbeep-ai-alt-text-generator' ) );
+		}
+
+		$encoded = $this->encode_image_for_api( $file_path, $image_id );
+		if ( is_wp_error( $encoded ) ) {
+			return $encoded;
+		}
+
 		return [
-			'type'      => 'image_url',
-			'image_url' => [
-				'url' => $image_url,
+			'image_id'      => (string) $image_id,
+			'attachment_id' => (string) $image_id,
+			'image_source'  => 'base64',
+			'image_base64'  => $encoded['base64'],
+			'base64'        => $encoded['base64'],
+			'mime_type'     => $encoded['mime'],
+			'width'         => $encoded['width'],
+			'height'        => $encoded['height'],
+			'filename'      => $filename,
+			'inline'        => [
+				'data_url' => 'data:' . $encoded['mime'] . ';base64,' . $encoded['base64'],
 			],
 		];
 	}
 
+	private function encode_image_for_api( $file_path, $image_id ) {
+		return $this->encode_image_simple( $file_path );
+	}
+
+	/**
+	 * Simple resize + base64 with fallback to GD.
+	 * Dynamically adjusts dimension/quality to land bytes-per-pixel in a safe band.
+	 */
+	private function encode_image_simple( $file_path ) {
+		$info   = getimagesize( $file_path );
+		$orig_w = $info ? (int) $info[0] : 0;
+		$orig_h = $info ? (int) $info[1] : 0;
+		if ( $orig_w <= 0 || $orig_h <= 0 ) {
+			return new \WP_Error( 'invalid_image_size', __( 'Could not read image dimensions.', 'beepbeep-ai-alt-text-generator' ) );
+		}
+
+		$min_bpp   = 0.03;
+		$max_bpp   = 0.09;
+		$mid_bpp   = ( $min_bpp + $max_bpp ) / 2;
+		$best      = null;
+		$max_side  = min( 512, max( $orig_w, $orig_h ) );
+		$targetdim = max( 96, (int) $max_side );
+		$quality   = 70;
+
+		for ( $i = 0; $i < 6; $i++ ) {
+			$scale    = min( 1, $targetdim / max( $orig_w, $orig_h ) );
+			$target_w = max( 1, (int) floor( $orig_w * $scale ) );
+			$target_h = max( 1, (int) floor( $orig_h * $scale ) );
+
+			$result = $this->encode_with_quality( $file_path, $target_w, $target_h, $orig_w, $orig_h, $quality );
+			if ( $result ) {
+				$bytes       = strlen( $result['base64'] ) * 3 / 4;
+				$pixel_count = max( 1, $result['width'] * $result['height'] );
+				$bpp         = $bytes / $pixel_count;
+
+				$score = abs( $bpp - $mid_bpp );
+				if ( ! $best || $score < $best['score'] ) {
+					$best = array_merge( $result, [ 'score' => $score ] );
+				}
+
+				if ( $bpp >= $min_bpp && $bpp <= $max_bpp ) {
+					unset( $result['score'] );
+					return $result;
+				}
+
+				if ( $bpp > $max_bpp ) {
+					$targetdim = max( 96, (int) floor( $targetdim * 0.72 ) );
+					$quality   = max( 40, $quality - 10 );
+				} else {
+					$quality   = min( 90, $quality + 10 );
+					$targetdim = min( $max_side, (int) floor( $targetdim * 1.1 ) );
+				}
+			} else {
+				$quality   = max( 40, $quality - 10 );
+				$targetdim = max( 96, (int) floor( $targetdim * 0.85 ) );
+			}
+		}
+
+		if ( $best ) {
+			unset( $best['score'] );
+			return $best;
+		}
+
+		return new \WP_Error(
+			'invalid_image_size',
+			__( 'Failed to save resized image.', 'beepbeep-ai-alt-text-generator' )
+		);
+	}
+
+	private function encode_with_quality( $file_path, $target_w, $target_h, $orig_w, $orig_h, $quality ) {
+		// WP editor path.
+		if ( function_exists( 'wp_get_image_editor' ) ) {
+			$editor = wp_get_image_editor( $file_path );
+			if ( ! is_wp_error( $editor ) ) {
+				$editor->resize( $target_w, $target_h, false );
+				if ( method_exists( $editor, 'set_quality' ) ) {
+					$editor->set_quality( $quality );
+				}
+
+				$upload_dir = wp_upload_dir();
+				if ( ! empty( $upload_dir['path'] ) && ! is_dir( $upload_dir['path'] ) ) {
+					wp_mkdir_p( $upload_dir['path'] );
+				}
+				$temp_filename = 'bbai-inline-' . $target_w . 'x' . $target_h . '-' . $quality . '-' . time() . '.jpg';
+				$temp_path     = ! empty( $upload_dir['path'] )
+					? trailingslashit( $upload_dir['path'] ) . $temp_filename
+					: trailingslashit( sys_get_temp_dir() ) . $temp_filename;
+
+				$saved = $editor->save( $temp_path, 'image/jpeg' );
+				if ( ! is_wp_error( $saved ) && ! empty( $saved['path'] ) && file_exists( $saved['path'] ) ) {
+					$contents = file_get_contents( $saved['path'] );
+					@unlink( $saved['path'] );
+					if ( $contents !== false ) {
+						$base64     = base64_encode( $contents );
+						$size_after = getimagesizefromstring( $contents );
+						return [
+							'base64' => $base64,
+							'width'  => $size_after ? (int) $size_after[0] : $target_w,
+							'height' => $size_after ? (int) $size_after[1] : $target_h,
+							'mime'   => 'image/jpeg',
+						];
+					}
+				}
+			}
+		}
+
+		// GD fallback.
+		if ( function_exists( 'imagecreatefromstring' ) && function_exists( 'imagecreatetruecolor' ) ) {
+			$raw = file_get_contents( $file_path );
+			if ( $raw !== false ) {
+				$src = @imagecreatefromstring( $raw );
+				if ( $src !== false ) {
+					$dst = imagecreatetruecolor( $target_w, $target_h );
+					imagecopyresampled( $dst, $src, 0, 0, 0, 0, $target_w, $target_h, $orig_w, $orig_h );
+					ob_start();
+					imagejpeg( $dst, null, $quality );
+					$jpeg = ob_get_clean();
+					imagedestroy( $dst );
+					imagedestroy( $src );
+					if ( $jpeg !== false ) {
+						$base64     = base64_encode( $jpeg );
+						$size_after = getimagesizefromstring( $jpeg );
+						return [
+							'base64' => $base64,
+							'width'  => $size_after ? (int) $size_after[0] : $target_w,
+							'height' => $size_after ? (int) $size_after[1] : $target_h,
+							'mime'   => 'image/jpeg',
+						];
+					}
+				}
+			}
+		}
+
+		return null;
+	}
+
+
+	/**
+	 * Determine if a URL is publicly reachable over HTTPS (not localhost or private IPs)
+	 *
+	 * @param string $url URL to check.
+	 * @return bool
+	 */
+	private function is_public_https_url( $url ) {
+		$parsed = wp_parse_url( $url );
+		if ( empty( $parsed['scheme'] ) || strtolower( $parsed['scheme'] ) !== 'https' || empty( $parsed['host'] ) ) {
+			return false;
+		}
+
+		$host = strtolower( $parsed['host'] );
+		if ( $host === 'localhost' || $host === '127.0.0.1' || substr( $host, -6 ) === '.local' ) {
+			return false;
+		}
+
+		if ( filter_var( $host, FILTER_VALIDATE_IP ) ) {
+			if ( substr( $host, 0, 4 ) === '10.' ) {
+				return false;
+			}
+			if ( substr( $host, 0, 8 ) === '192.168.' ) {
+				return false;
+			}
+			if ( preg_match( '#^172\\.(1[6-9]|2[0-9]|3[0-1])\\.#', $host ) ) {
+				return false;
+			}
+		}
+
+		return true;
+	}
 	/**
 	 * Get user subscriptions.
 	 *
@@ -1012,4 +1267,3 @@ class ApiClient {
 		return $this->post( '/billing/create-portal', [ 'email' => $email ] );
 	}
 }
-

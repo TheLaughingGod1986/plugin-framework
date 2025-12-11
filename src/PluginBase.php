@@ -71,7 +71,19 @@ abstract class PluginBase {
 	 * @return void
 	 */
 	protected function load_dependencies() {
-		// Core classes are autoloaded, but ensure logger table exists.
+		// Core classes are autoloaded.
+		// Defer logger table creation to admin_init to avoid slowing down frontend.
+		if ( is_admin() ) {
+			add_action( 'admin_init', [ __CLASS__, 'maybe_create_logger_table' ], 1 );
+		}
+	}
+
+	/**
+	 * Create logger table if needed (deferred to admin_init for performance).
+	 *
+	 * @return void
+	 */
+	public static function maybe_create_logger_table() {
 		Logger::create_table();
 	}
 

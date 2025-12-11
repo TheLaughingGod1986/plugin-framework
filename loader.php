@@ -66,11 +66,8 @@ class Optti_Framework {
 		}
 
 		spl_autoload_register( function( $class ) {
-			// Only handle Optti\Framework namespace.
-			if ( strpos( $class, 'Optti\\Framework\\' ) !== 0 ) {
-				return;
-			}
-
+			// Handle Optti\Framework namespace.
+			if ( strpos( $class, 'Optti\\Framework\\' ) === 0 ) {
 			// Remove namespace prefix.
 			$relative_class = str_replace( 'Optti\\Framework\\', '', $class );
 
@@ -84,6 +81,33 @@ class Optti_Framework {
 			if ( file_exists( $file_path ) ) {
 				require_once $file_path;
 				return true;
+				}
+
+				return false;
+			}
+
+			// Handle Optti\Admin namespace (admin classes in plugin root).
+			if ( strpos( $class, 'Optti\\Admin\\' ) === 0 ) {
+				// Remove namespace prefix.
+				$relative_class = str_replace( 'Optti\\Admin\\', '', $class );
+
+				// Convert Class_Name to class-class-name.php format.
+				// First handle any namespace separators, then convert underscores.
+				$file = str_replace( '\\', '_', $relative_class );
+				$file = 'class-' . strtolower( str_replace( '_', '-', $file ) ) . '.php';
+
+				// Build file path - admin classes are in the plugin's admin directory.
+				// __DIR__ is framework/, so go up one level to plugin root.
+				$plugin_dir = dirname( __DIR__ );
+				$file_path = $plugin_dir . '/admin/' . $file;
+
+				// Load file if it exists.
+				if ( file_exists( $file_path ) ) {
+					require_once $file_path;
+					return true;
+				}
+
+				return false;
 			}
 
 			return false;
