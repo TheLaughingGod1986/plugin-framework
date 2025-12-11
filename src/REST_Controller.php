@@ -594,7 +594,13 @@ abstract class REST_Controller {
 		// Update license data if activation successful.
 		if ( isset( $result['license'] ) ) {
 			$api->set_license_key( $license_key );
-			$api->set_license_data( $result['license'] );
+
+			// Transform backend response to expected format
+			$license_data = [
+				'organization' => $result['license'],
+				'site'         => $result['site'] ?? [],
+			];
+			$api->set_license_data( $license_data );
 		}
 
 		return rest_ensure_response( $result );

@@ -174,7 +174,12 @@ class LicenseManager implements ServiceInterface {
 
 		// Update license data.
 		if ( isset( $response['license'] ) ) {
-			$this->set_license_data( $response['license'] );
+			// Transform backend response to expected format
+			$license_data = [
+				'organization' => $response['license'],
+				'site'         => $response['site'] ?? [],
+			];
+			$this->set_license_data( $license_data );
 		}
 
 		// Cache validation result.
@@ -219,7 +224,12 @@ class LicenseManager implements ServiceInterface {
 		// Store license key and data.
 		$this->set_license_key( $license_key );
 		if ( isset( $response['license'] ) ) {
-			$this->set_license_data( $response['license'] );
+			// Transform backend response to expected format
+			$license_data = [
+				'organization' => $response['license'],
+				'site'         => $response['site'] ?? [],
+			];
+			$this->set_license_data( $license_data );
 		}
 
 		// Clear quota cache.
@@ -297,17 +307,36 @@ class LicenseManager implements ServiceInterface {
 		}
 
 		// Format quota data.
+		$used_credits      = isset( $usage['credits_used'] ) ? intval( $usage['credits_used'] ) : ( isset( $usage['used'] ) ? intval( $usage['used'] ) : 0 );
+		$remaining_credits = isset( $usage['credits_remaining'] ) ? intval( $usage['credits_remaining'] ) : ( isset( $usage['remaining'] ) ? intval( $usage['remaining'] ) : 0 );
+
+		// Compute limit from explicit field or by summing used + remaining.
+		if ( isset( $usage['total_limit'] ) ) {
+			$limit = intval( $usage['total_limit'] );
+		} elseif ( isset( $usage['limit'] ) ) {
+			$limit = intval( $usage['limit'] );
+		} else {
+			$limit = max( 0, $used_credits + $remaining_credits );
+		}
+
 		$quota = [
-			'plan_type' => $usage['plan'] ?? 'free',
-			'limit'     => isset( $usage['limit'] ) ? max( 0, intval( $usage['limit'] ) ) : 50,
-			'used'       => isset( $usage['used'] ) ? max( 0, intval( $usage['used'] ) ) : 0,
-			'remaining' => 0,
+			'plan_type' => $usage['plan_type'] ?? $usage['plan'] ?? 'free',
+			'limit'     => max( 0, $limit ),
+			'used'      => max( 0, $used_credits ),
+			'remaining' => max( 0, $remaining_credits ),
 			'resets_at' => 0,
 		];
 
 		// Calculate reset timestamp.
 		if ( ! empty( $usage['resetDate'] ) ) {
 			$reset_ts = strtotime( $usage['resetDate'] );
+			if ( $reset_ts > 0 ) {
+				$quota['resets_at'] = $reset_ts;
+			}
+		}
+
+		if ( $quota['resets_at'] <= 0 && ! empty( $usage['period_end'] ) ) {
+			$reset_ts = strtotime( $usage['period_end'] );
 			if ( $reset_ts > 0 ) {
 				$quota['resets_at'] = $reset_ts;
 			}
@@ -322,7 +351,9 @@ class LicenseManager implements ServiceInterface {
 		}
 
 		// Calculate remaining.
-		$quota['remaining'] = max( 0, $quota['limit'] - $quota['used'] );
+		if ( $quota['remaining'] <= 0 && $quota['limit'] > 0 ) {
+			$quota['remaining'] = max( 0, $quota['limit'] - $quota['used'] );
+		}
 
 		// Cache the result.
 		set_transient( $this->option_keys['quota_cache'], $quota, self::QUOTA_CACHE_EXPIRY );
@@ -502,6 +533,13 @@ class LicenseManager implements ServiceInterface {
 			return;
 		}
 
+		// Only show notices if we have a license key to validate.
+		$license_key = $this->get_license_key();
+		if ( empty( $license_key ) ) {
+			// No license - this is fine for free users.
+			return;
+		}
+
 		// Check if license is invalid or expired.
 		$validation = $this->validate();
 
@@ -513,12 +551,19 @@ class LicenseManager implements ServiceInterface {
 				return;
 			}
 
-			// Show error notice.
+			// Don't show errors for backend API route issues (404, etc.) - these are backend problems, not license issues.
+			$error_message = $validation->get_error_message();
+			if ( strpos( $error_message, 'Route' ) !== false && strpos( $error_message, 'not found' ) !== false ) {
+				// Backend API route doesn't exist - don't show this as a license error.
+				return;
+			}
+
+			// Show error notice for actual license validation errors.
 			?>
 			<div class="notice notice-error">
 				<p>
 					<strong><?php esc_html_e( 'Optti License Error:', 'beepbeep-ai-alt-text-generator' ); ?></strong>
-					<?php echo esc_html( $validation->get_error_message() ); ?>
+					<?php echo esc_html( $error_message ); ?>
 				</p>
 			</div>
 			<?php
@@ -571,4 +616,3 @@ class LicenseManager implements ServiceInterface {
 		return preg_match( $pattern, $license_key ) === 1;
 	}
 }
-
