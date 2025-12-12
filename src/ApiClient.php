@@ -552,7 +552,7 @@ class ApiClient {
 		$response = $this->request( '/auth/login', 'POST', [
 			'email'    => $email,
 			'password' => $password,
-		] );
+		], [ 'include_auth_headers' => false ] );
 
 		if ( ! is_wp_error( $response ) && isset( $response['token'] ) ) {
 			$this->set_token( $response['token'] );
@@ -579,7 +579,7 @@ class ApiClient {
 		$response = $this->request( '/auth/register', 'POST', [
 			'email'    => $email,
 			'password' => $password,
-		] );
+		], [ 'include_auth_headers' => false ] );
 
 		if ( ! is_wp_error( $response ) && isset( $response['token'] ) ) {
 			$this->set_token( $response['token'] );
